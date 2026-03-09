@@ -3,7 +3,7 @@ import ants
 import numpy as np
 
 class LDBMEngine:
-    def __init__(self, itk_threads=1):
+    def __init__(self, itk_threads=4):
         # Control internal ANTs parallelism to avoid CPU over-subscription
         os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = str(itk_threads)
 
@@ -25,7 +25,7 @@ class LDBMEngine:
         # High-level SyN template building (The 'Aperture' method)
         sst = ants.build_template(
             image_list=images,
-            iterations=3,
+            iterations=5,
             gradient_step=0.2,
             type_of_transform='SyN'
         )
