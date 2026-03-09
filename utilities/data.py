@@ -41,6 +41,32 @@ class BIDSManager:
             return f"Successfully processed sub-{sub_id}"
         except Exception as e:
             return f"Error in sub-{sub_id}: {str(e)}"
+        
+
+    def run_level2_mni(self, mni_path):
+        """Batch warps all subjects' Level 1 results to MNI space."""
+        subjects = self.layout.get_subjects()
+        print(f"--- Warping {len(subjects)} subjects to MNI Space ---")
+        
+        for sub in subjects:
+            sessions = self.layout.get_sessions(subject=sub)
+            sst_path = os.path.join(self.deriv_root, f"sub-{sub}", "anat", f"sub-{sub}_desc-SST_T1w.nii.gz")
+            
+            if not os.path.exists(sst_path):
+                print(f"Skipping sub-{sub}: No SST found.")
+                continue
+
+            for ses in sessions:
+                jac_in = os.path.join(self.deriv_root, f"sub-{sub}", f"ses-{ses}", "anat", 
+                                      f"sub-{sub}_ses-{ses}_desc-logJacobian_stat.nii.gz")
+                
+                # Output filename reflects the new MNI space
+                jac_out = os.path.join(self.deriv_root, f"sub-{sub}", f"ses-{ses}", "anat", 
+                                       f"sub-{sub}_ses-{ses}_space-MNI_desc-logJacobian_stat.nii.gz")
+                
+                if os.path.exists(jac_in) and not os.path.exists(jac_out):
+                    self.engine.warp_sst_to_mni(sst_path, mni_path, jac_in, jac_out)
+
 
     def run_all(self, subject_id=None):
         """Runs processing. If subject_id is provided, runs only that one."""
