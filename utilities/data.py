@@ -4,10 +4,10 @@ from concurrent.futures import ThreadPoolExecutor
 from utilities.ldbm import LDBMEngine # Ensure this matches your file structure
 
 class BIDSManager:
-    def __init__(self, bids_root, deriv_root, n_parallel_subjects=2, itk_threads=4):
+    def __init__(self, bids_root, n_parallel_subjects=2, itk_threads=4):
         self.layout = BIDSLayout(bids_root)
         # Standardizing naming to match your 'lidar' request
-        self.deriv_root = os.path.join(deriv_root, "lidar") 
+        self.deriv_root = os.path.join(bids_root, "derivatives", "dbm") 
         self.engine = LDBMEngine(itk_threads=itk_threads) 
         self.n_parallel = n_parallel_subjects
 
@@ -17,7 +17,7 @@ class BIDSManager:
         t1_paths = [self.layout.get(subject=sub_id, session=s, suffix='T1w', extension='nii.gz', return_type='file')[0] 
                     for s in sessions]
         
-        sub_deriv_dir = os.path.join(self.deriv_root, f"sub-{sub_id}", "anat")
+        sub_deriv_dir = os.path.join(self.deriv_root, f"sub-{sub_id}", "sst")
         os.makedirs(sub_deriv_dir, exist_ok=True)
         sst_path = os.path.join(sub_deriv_dir, f"sub-{sub_id}_desc-SST_T1w.nii.gz")
         

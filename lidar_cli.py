@@ -7,7 +7,7 @@ def main():
     
     # Required Arguments
     parser.add_argument("bids_dir", help="Path to the root of the BIDS dataset")
-    parser.add_argument("output_dir", help="Path to the output derivatives directory")
+
     
     # Task Selection
     parser.add_argument("--task", choices=["level1", "level2"], default="level1",
@@ -26,7 +26,6 @@ def main():
         print(f"--- Starting LIDAR Level 1: Subject-Specific Templates ---")
         manager = BIDSManager(
             bids_root=args.bids_dir, 
-            deriv_root=args.output_dir, 
             n_parallel_subjects=args.n_parallel
         )
         # Update engine threads based on CLI input
