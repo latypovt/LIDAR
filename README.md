@@ -34,3 +34,9 @@ Warps the subject-level Jacobian maps into MNI space for group-level statistics.
 python lidar_cli.py /path/to/bids --task level2 --mni_template /path/to/mni_template.nii.gz
 ```
 
+### Modelling
+Performs statistical modelling on the subject-level Jacobian maps.
+
+```bash
+python lidar_stats.py /path/to/bids source_csv_file analysis_name --formula "JD~variable1+variable2" --mask /path/to/mask.nii.gz --n_jobs 4
+```
