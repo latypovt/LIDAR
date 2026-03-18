@@ -1,5 +1,4 @@
 import os
-import json
 import argparse
 import pandas as pd
 import numpy as np
@@ -7,9 +6,10 @@ import nibabel as nib
 import statsmodels
 import nilearn
 import joblib 
+import patsy
 from nilearn.maskers import NiftiMasker
 import statsmodels.formula.api as smf
-from scipy.stats import false_discovery_control  # SCIPY REPLACEMENT
+from scipy.stats import false_discovery_control 
 from joblib import Parallel, delayed
 from tqdm import tqdm
 import glob
@@ -26,13 +26,15 @@ def run_voxel_mixedlm(voxel_slice, df, formula):
             return {
                 'tvalues': result.tvalues.to_dict(),
                 'params': result.params.to_dict(),
-                'pvalues': result.pvalues.to_dict()
+                'pvalues': result.pvalues.to_dict(),
+                'resid': result.resid.values  # EXTRACTING THE ERROR
             }
         except Exception:
-            return None
+            # Fallback for failed convergence to maintain array structure
+            return {'failed': True, 'resid': np.zeros(len(df))}
 
 def main():
-    parser = argparse.ArgumentParser(description="LIDAR: Voxel-wise MixedLM (Scipy FDR)")
+    parser = argparse.ArgumentParser(description="LIDAR: Voxel-wise MixedLM + AFNI 3dClustSim Export")
     parser.add_argument("bids_dir")
     parser.add_argument("metadata")
     parser.add_argument("analysis_name")
@@ -67,7 +69,6 @@ def main():
     temp_df = pd.DataFrame(matched_metadata)
     temp_df['file_list_idx'] = range(len(matched_files))
     
-    # Dynamic column drop based on formula
     formula_vars = args.formula.replace('~', '+').replace('*', '+').split('+')
     check_vars = [v.strip() for v in formula_vars if v.strip() in temp_df.columns]
     final_df = temp_df.dropna(subset=check_vars)
@@ -87,18 +88,35 @@ def main():
 
     indices_to_process = range(50000, 60000) if args.test_run else range(n_total)
     
-    # 4. Processing with RESTORED Progress Bar
+    # 4. Processing (MixedLM execution)
     raw_results = Parallel(n_jobs=args.n_jobs)(
         delayed(run_voxel_mixedlm)(voxel_data[:, i], final_df, args.formula) 
         for i in tqdm(indices_to_process, desc="Processing", ascii="○◔◑◕●", colour="#FEFD9b")
     )
     joblib.dump(raw_results, os.path.join(root_out_dir, "raw_results.pkl"))
 
-    # 5. Full Feature Discovery
-    sample_res = next(r for r in raw_results if r is not None)
+    # =========================================================================
+    # 5. AFNI 3dClustSim DEPENDENCY: RECONSTRUCT 4D RESIDUALS
+    # =========================================================================
+    print("Reconstructing 4D Residual map for AFNI Spatial Autocorrelation...")
+    # Initialize an empty matrix of shape (n_samples, n_voxels)
+    resid_matrix = np.zeros(voxel_data.shape) 
+    
+    for i, res in enumerate(raw_results):
+        if res and not res.get('failed', False):
+            # i aligns with the original voxel_data columns
+            resid_matrix[:, i] = res['resid']
+            
+    # Project back to 3D brain space and save
+    resid_img = masker.inverse_transform(resid_matrix)
+    nib.save(resid_img, os.path.join(root_out_dir, "4D_residuals.nii.gz"))
+    print(f"Residuals saved to {root_out_dir}/4D_residuals.nii.gz")
+    # =========================================================================
+
+    # 6. Full Feature Discovery & Scipy Export
+    sample_res = next(r for r in raw_results if r and not r.get('failed', False))
     all_features = [k for k in sample_res['params'].keys() if k != 'Group Var']
 
-    # 6. Isolated Subfolder Export
     for feature in all_features:
         clean_name = feature.replace(':', '_').replace('(', '').replace(')', '').replace('[', '').replace(']', '')
         feat_dir = os.path.join(root_out_dir, clean_name)
@@ -108,13 +126,12 @@ def main():
         valid_p, valid_local_idx = [], []
         
         for i, res in enumerate(raw_results):
-            if res and feature in res['pvalues']:
+            if res and not res.get('failed', False) and feature in res['pvalues']:
                 p_val = res['pvalues'][feature]
                 if not np.isnan(p_val):
                     valid_p.append(p_val); valid_local_idx.append(i)
 
         if valid_p:
-            # SCIPY Implementation: false_discovery_control
             p_fdr = false_discovery_control(valid_p)
             rows = []
             
