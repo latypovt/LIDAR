@@ -59,14 +59,14 @@ fi
 # ---------------------------------------------------------
 echo "Extracting FWE Cluster Thresholds (alpha = 0.05)..."
 
-# Use grep to find the line starting with 0.05 (ignoring leading spaces), then awk to grab the columns
-K_01=$(grep -E '^\s*0\.05' "$SIM_OUT" | awk '{print $2}')
-K_005=$(grep -E '^\s*0\.05' "$SIM_OUT" | awk '{print $3}')
-K_001=$(grep -E '^\s*0\.05' "$SIM_OUT" | awk '{print $4}')
+# AFNI pivoted the table: Rows are p-values, Column 2 is the cluster size.
+K_01=$(awk '$1 ~ /^0\.01/ {print $2}' "$SIM_OUT")
+K_005=$(awk '$1 ~ /^0\.005/ {print $2}' "$SIM_OUT")
+K_001=$(awk '$1 ~ /^0\.001/ {print $2}' "$SIM_OUT")
 
-# FAILSAFE: If extraction fails, print the file and abort before crashing Python
+# FAILSAFE: If extraction fails, abort before crashing Python
 if [ -z "$K_005" ]; then
-    echo "FATAL ERROR: Could not parse k-thresholds. Here is the raw AFNI output:"
+    echo "FATAL ERROR: Could not parse k-thresholds. Raw AFNI output:"
     cat "$SIM_OUT"
     exit 1
 fi
