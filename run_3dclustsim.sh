@@ -20,7 +20,7 @@ echo " Target: $ANALYSIS_DIR"
 echo "=========================================================="
 
 # Environment
-module load afni 2>/dev/null || echo "Warning: module load afni failed. Assuming AFNI is in PATH."
+module load afni/20191017 2>/dev/null || echo "Warning: module load afni failed. Assuming AFNI is in PATH."
 
 # Target Files
 RESIDUALS="${ANALYSIS_DIR}/4D_residuals.nii.gz"
