@@ -27,14 +27,14 @@ def run_voxel_mixedlm(voxel_slice, df, formula):
                 'tvalues': result.tvalues.to_dict(),
                 'params': result.params.to_dict(),
                 'pvalues': result.pvalues.to_dict(),
-                'resid': result.resid.values  # EXTRACTING THE ERROR
+                'resid': result.resid.values  # EXTRACTING THE ERROR (AFNI DEPENDENCY)
             }
         except Exception:
             # Fallback for failed convergence to maintain array structure
             return {'failed': True, 'resid': np.zeros(len(df))}
 
 def main():
-    parser = argparse.ArgumentParser(description="LIDAR: Voxel-wise MixedLM + AFNI 3dClustSim Export")
+    parser = argparse.ArgumentParser(description="LIDAR: Voxel-wise MixedLM + AFNI 3dClustSim + PALM TFCE Export")
     parser.add_argument("bids_dir")
     parser.add_argument("metadata")
     parser.add_argument("analysis_name")
@@ -86,9 +86,53 @@ def main():
     voxel_data = masker.transform(final_files)
     n_total = voxel_data.shape[1]
 
+    # =========================================================================
+    # 4. TFCE / FSL PALM EXPORT ENGINE
+    # =========================================================================
+    tfce_dir = os.path.join(root_out_dir, "tfce_palm")
+    os.makedirs(tfce_dir, exist_ok=True)
+    print(f"Exporting PALM dependencies to {tfce_dir}...")
+
+    # A. Create 4D NIfTI Stack
+    stacked_img = masker.inverse_transform(voxel_data)
+    nib.save(stacked_img, os.path.join(tfce_dir, "4D_logJacobian.nii.gz"))
+    nib.save(mask_img, os.path.join(tfce_dir, "mask.nii.gz"))
+
+    # B. Generate Design Matrix (Fixed Effects + Subject Random Intercepts)
+    fe_formula = args.formula.split('~')[1].strip()
+    fe_matrix = patsy.dmatrix(fe_formula, final_df, return_type='dataframe')
+    
+    # Add Subject Dummies (dropping the first to avoid collinearity with global intercept)
+    sub_dummies = pd.get_dummies(final_df['subject_id'], prefix='sub', drop_first=True, dtype=float)
+    design_df = pd.concat([fe_matrix, sub_dummies], axis=1)
+    
+    # Save raw CSV for PALM and Labels for you
+    design_df.to_csv(os.path.join(tfce_dir, "design.csv"), index=False, header=False)
+    with open(os.path.join(tfce_dir, "design_labels.txt"), "w") as f:
+        f.write("\n".join(design_df.columns))
+
+    # C. Generate Contrasts
+    n_cols = design_df.shape[1]
+    contrasts, contrast_names = [], []
+    for i, col in enumerate(fe_matrix.columns):
+        if col == 'Intercept': continue 
+        con_pos = np.zeros(n_cols); con_pos[i] = 1
+        con_neg = np.zeros(n_cols); con_neg[i] = -1
+        contrasts.extend([con_pos, con_neg])
+        contrast_names.extend([f"{col}_pos", f"{col}_neg"])
+
+    pd.DataFrame(contrasts).to_csv(os.path.join(tfce_dir, "contrasts.csv"), index=False, header=False)
+    with open(os.path.join(tfce_dir, "contrast_labels.txt"), "w") as f:
+        f.write("\n".join(contrast_names))
+
+    # D. Exchangeability Blocks
+    final_df['EB'] = final_df['subject_id'].astype('category').cat.codes + 1
+    final_df[['EB']].to_csv(os.path.join(tfce_dir, "eb.csv"), index=False, header=False)
+    # =========================================================================
+
     indices_to_process = range(50000, 60000) if args.test_run else range(n_total)
     
-    # 4. Processing (MixedLM execution)
+    # 5. Processing (MixedLM execution)
     raw_results = Parallel(n_jobs=args.n_jobs)(
         delayed(run_voxel_mixedlm)(voxel_data[:, i], final_df, args.formula) 
         for i in tqdm(indices_to_process, desc="Processing", ascii="○◔◑◕●", colour="#FEFD9b")
@@ -96,24 +140,21 @@ def main():
     joblib.dump(raw_results, os.path.join(root_out_dir, "raw_results.pkl"))
 
     # =========================================================================
-    # 5. AFNI 3dClustSim DEPENDENCY: RECONSTRUCT 4D RESIDUALS
+    # 6. AFNI 3dClustSim DEPENDENCY: RECONSTRUCT 4D RESIDUALS
     # =========================================================================
     print("Reconstructing 4D Residual map for AFNI Spatial Autocorrelation...")
-    # Initialize an empty matrix of shape (n_samples, n_voxels)
     resid_matrix = np.zeros(voxel_data.shape) 
     
     for i, res in enumerate(raw_results):
         if res and not res.get('failed', False):
-            # i aligns with the original voxel_data columns
             resid_matrix[:, i] = res['resid']
             
-    # Project back to 3D brain space and save
     resid_img = masker.inverse_transform(resid_matrix)
     nib.save(resid_img, os.path.join(root_out_dir, "4D_residuals.nii.gz"))
     print(f"Residuals saved to {root_out_dir}/4D_residuals.nii.gz")
     # =========================================================================
 
-    # 6. Full Feature Discovery & Scipy Export
+    # 7. Full Feature Discovery & Scipy Export
     sample_res = next(r for r in raw_results if r and not r.get('failed', False))
     all_features = [k for k in sample_res['params'].keys() if k != 'Group Var']
 
