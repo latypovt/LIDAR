@@ -58,15 +58,22 @@ fi
 # STEP 3: Threshold Extraction
 # ---------------------------------------------------------
 echo "Extracting FWE Cluster Thresholds (alpha = 0.05)..."
-# In AFNI .1D files, Col 1 = Alpha. Cols 2, 3, 4 map to the pthrs requested above.
-K_01=$(awk '$1+0 == 0.05 {print $2}' "$SIM_OUT")
-K_005=$(awk '$1+0 == 0.05 {print $3}' "$SIM_OUT")
-K_001=$(awk '$1+0 == 0.05 {print $4}' "$SIM_OUT")
+
+# Use grep to find the line starting with 0.05 (ignoring leading spaces), then awk to grab the columns
+K_01=$(grep -E '^\s*0\.05' "$SIM_OUT" | awk '{print $2}')
+K_005=$(grep -E '^\s*0\.05' "$SIM_OUT" | awk '{print $3}')
+K_001=$(grep -E '^\s*0\.05' "$SIM_OUT" | awk '{print $4}')
+
+# FAILSAFE: If extraction fails, print the file and abort before crashing Python
+if [ -z "$K_005" ]; then
+    echo "FATAL ERROR: Could not parse k-thresholds. Here is the raw AFNI output:"
+    cat "$SIM_OUT"
+    exit 1
+fi
 
 echo "  p < 0.01  requires k >= $K_01"
 echo "  p < 0.005 requires k >= $K_005"
 echo "  p < 0.001 requires k >= $K_001"
-
 # ---------------------------------------------------------
 # STEP 4: Execution Across All Model Features
 # ---------------------------------------------------------
