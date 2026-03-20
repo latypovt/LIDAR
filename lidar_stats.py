@@ -98,13 +98,13 @@ def main():
     nib.save(stacked_img, os.path.join(tfce_dir, "4D_logJacobian.nii.gz"))
     nib.save(mask_img, os.path.join(tfce_dir, "mask.nii.gz"))
 
-    # B. Generate Design Matrix (Fixed Effects + Subject Random Intercepts)
+   # B. Generate Design Matrix (Fixed Effects Only)
     fe_formula = args.formula.split('~')[1].strip()
-    fe_matrix = patsy.dmatrix(fe_formula, final_df, return_type='dataframe')
+    design_df = patsy.dmatrix(fe_formula, final_df, return_type='dataframe')
     
-    # Add Subject Dummies (dropping the first to avoid collinearity with global intercept)
-    sub_dummies = pd.get_dummies(final_df['subject_id'], prefix='sub', drop_first=True, dtype=float)
-    design_df = pd.concat([fe_matrix, sub_dummies], axis=1)
+    # Do NOT add Subject Dummies. 
+    # Your baseline variables perfectly predict subject IDs, causing the rank deficiency.
+    # Your '-eb eb.csv' file handles the repeated measures permutations in PALM.
     
     # Save raw CSV for PALM and Labels for you
     design_df.to_csv(os.path.join(tfce_dir, "design.csv"), index=False, header=False)
@@ -114,7 +114,7 @@ def main():
     # C. Generate Contrasts
     n_cols = design_df.shape[1]
     contrasts, contrast_names = [], []
-    for i, col in enumerate(fe_matrix.columns):
+    for i, col in enumerate(design_df.columns):
         if col == 'Intercept': continue 
         con_pos = np.zeros(n_cols); con_pos[i] = 1
         con_neg = np.zeros(n_cols); con_neg[i] = -1
@@ -124,7 +124,7 @@ def main():
     pd.DataFrame(contrasts).to_csv(os.path.join(tfce_dir, "contrasts.csv"), index=False, header=False)
     with open(os.path.join(tfce_dir, "contrast_labels.txt"), "w") as f:
         f.write("\n".join(contrast_names))
-
+        
     # D. Exchangeability Blocks
     final_df['EB'] = final_df['subject_id'].astype('category').cat.codes + 1
     final_df[['EB']].to_csv(os.path.join(tfce_dir, "eb.csv"), index=False, header=False)
