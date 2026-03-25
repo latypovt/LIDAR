@@ -47,10 +47,19 @@ def main():
     root_out_dir = os.path.join(args.bids_dir, "derivatives", "dbm", "stats", args.analysis_name)
     os.makedirs(root_out_dir, exist_ok=True)
 
-    # 1. Metadata and Centering
+    # 1. Metadata, Formula Detection, and Mean Centering
     df = pd.read_csv(args.metadata, sep=None, engine='python')
-    if 'age' in df.columns:
-        df['age'] = df['age'] - df['age'].mean()
+    
+    # Dynamically find which variables from the formula are in the dataframe
+    formula_vars = args.formula.replace('~', '+').replace('*', '+').split('+')
+    active_vars = [v.strip() for v in formula_vars if v.strip() in df.columns]
+
+    for var in active_vars:
+        # Check specifically for 'age' or age-related continuous variables
+        if 'age' in var.lower():
+            mean_val = df[var].mean()
+            df[var] = df[var] - mean_val
+            print(f"  [STAT] Mean centering '{var}': Subtracted {mean_val:.4f}")
 
     # 2. File Matching
     search_pattern = os.path.join(args.bids_dir, "derivatives", "dbm", "sub-*", "ses-*", "anat", "*_space-MNI_desc-logJacobian_stat.nii.gz")
