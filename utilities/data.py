@@ -24,7 +24,7 @@ class BIDSManager:
         
         return t1_paths, sst_path, sessions
 
-    def process_level1_subject(self, sub_id):
+    def process_level1_subject(self, sub_id, jac_type='relative'):
         """Workflow for Level 1: SST and Jacobians in SST space."""
         try:
             t1_paths, sst_path, sessions = self.get_subject_workload(sub_id)
@@ -36,56 +36,59 @@ class BIDSManager:
             for i, ses in enumerate(sessions):
                 out_dir = os.path.join(self.deriv_root, f"sub-{sub_id}", f"ses-{ses}", "anat")
                 os.makedirs(out_dir, exist_ok=True)
-                jac_out = os.path.join(out_dir, f"sub-{sub_id}_ses-{ses}_desc-logJacobian_stat.nii.gz")
+                
+                # Update naming to track jacobian type
+                jac_out = os.path.join(out_dir, f"sub-{sub_id}_ses-{ses}_desc-{jac_type}Jacobian_stat.nii.gz")
                 
                 # Defensive Check: Skip Jacobian if it exists
                 if not os.path.exists(jac_out):
-                    self.engine.generate_log_jacobian(t1_paths[i], sst_path, jac_out)
+                    self.engine.generate_log_jacobian(t1_paths[i], sst_path, jac_out, jac_type)
             
             return f"DONE Level 1: sub-{sub_id}"
         except Exception as e:
             return f"FAIL Level 1: sub-{sub_id} -> {str(e)}"
 
-    def process_level2_subject(self, sub_id, mni_path):
-        """Workflow for Level 2: Warp Jacobians to MNI space."""
+    def process_level2_subject(self, sub_id, template_path, jac_type='relative'):
+        """Workflow for Level 2: Composed Warp to Atlas space."""
         try:
-            sessions = self.layout.get_sessions(subject=sub_id)
-            sst_path = os.path.join(self.deriv_root, f"sub-{sub_id}", "sst", f"sub-{sub_id}_desc-SST_T1w.nii.gz")
+            # We need t1_paths to generate the fresh composed warp from native space
+            t1_paths, sst_path, sessions = self.get_subject_workload(sub_id)
             
             if not os.path.exists(sst_path):
                 return f"SKIP Level 2: sub-{sub_id} (No SST)"
 
-            for ses in sessions:
-                jac_in = os.path.join(self.deriv_root, f"sub-{sub_id}", f"ses-{ses}", "anat", 
-                                      f"sub-{sub_id}_ses-{ses}_desc-logJacobian_stat.nii.gz")
-                jac_out = os.path.join(self.deriv_root, f"sub-{sub_id}", f"ses-{ses}", "anat", 
-                                       f"sub-{sub_id}_ses-{ses}_space-MNI_desc-logJacobian_stat.nii.gz")
+            for i, ses in enumerate(sessions):
+                out_dir = os.path.join(self.deriv_root, f"sub-{sub_id}", f"ses-{ses}", "anat")
+                
+                # Update naming to reflect common template space and jacobian type
+                jac_out = os.path.join(out_dir, f"sub-{sub_id}_ses-{ses}_space-Template_desc-{jac_type}Jacobian.nii.gz")
                 
                 # Defensive Check: Skip warping if already done
-                if os.path.exists(jac_in) and not os.path.exists(jac_out):
-                    self.engine.warp_sst_to_mni(sst_path, mni_path, jac_in, jac_out)
+                if not os.path.exists(jac_out):
+                    self.engine.warp_composed_jacobian(t1_paths[i], sst_path, template_path, jac_out, jac_type)
             
             return f"DONE Level 2: sub-{sub_id}"
         except Exception as e:
             return f"FAIL Level 2: sub-{sub_id} -> {str(e)}"
 
-    def run_level1(self, subject_id=None):
+    def run_level1(self, subject_id=None, jac_type='relative'):
         """Runs SST and Subject-Space Jacobian generation."""
         subjects = [subject_id] if subject_id else self.layout.get_subjects()
-        print(f"--- Running Level 1 for {len(subjects)} subjects ---")
+        print(f"--- Running Level 1 ({jac_type.upper()}) for {len(subjects)} subjects ---")
         
         with ThreadPoolExecutor(max_workers=self.n_parallel) as executor:
-            results = list(executor.map(self.process_level1_subject, subjects))
+            # Lambda passes the jac_type down to the worker thread
+            results = list(executor.map(lambda s: self.process_level1_subject(s, jac_type), subjects))
         for r in results: print(r)
 
-    def run_level2(self, mni_path, subject_id=None):
-        """Parallel execution of MNI warping."""
+    def run_level2_composed(self, template_path, subject_id=None, jac_type='relative'):
+        """Parallel execution of MNI/Atlas composed warping."""
         subjects = [subject_id] if subject_id else self.layout.get_subjects()
-        print(f"--- Running Level 2 (MNI) for {len(subjects)} subjects ---")
+        print(f"--- Running Level 2 Composed ({jac_type.upper()}) for {len(subjects)} subjects ---")
         
         with ThreadPoolExecutor(max_workers=self.n_parallel) as executor:
-            # We use a lambda to pass the mni_path to each thread
-            results = list(executor.map(lambda s: self.process_level2_subject(s, mni_path), subjects))
+            # Lambda passes both the template path and jac_type down to the worker thread
+            results = list(executor.map(lambda s: self.process_level2_subject(s, template_path, jac_type), subjects))
         for r in results: print(r)
 
     def run_all_levels(self, mni_path, subject_id=None):
