@@ -67,31 +67,33 @@ class LDBMEngine:
         ants.image_write(sst, output_path)
         return sst
     
-    def warp_sst_to_mni(self, sst_path, mni_template_path, jacobian_path, output_path):
+    def warp_composed_jacobian(self, moving_path, sst_path, mni_path, output_path, jac_type='relative'):
         """
-        Registers SST to MNI and warps the Level 1 Jacobian.
+        Composes Session->SST and SST->MNI transforms into one field.
         """
-        fixed_mni = ants.image_read(mni_template_path)
-        moving_sst = ants.image_read(sst_path)
+        fixed_mni = ants.image_read(mni_path)
+        sst = ants.image_read(sst_path)
+        moving = self.preprocess(moving_path)
+
+        # 1. Map Session to SST
+        reg1 = ants.registration(fixed=sst, moving=moving, type_of_transform='SyN')
         
-        # 1. Register SST to MNI (SyN is best for cross-subject mapping)
-        # Using 'SyN' here ensures the subject's anatomy fits the standard grid
-        reg = ants.registration(
-            fixed=fixed_mni, 
-            moving=moving_sst, 
-            type_of_transform='SyN'
+        # 2. Map SST to Population Template
+        reg2 = ants.registration(fixed=fixed_mni, moving=sst, type_of_transform='SyN')
+        
+        # 3. COMPOSITION
+        combined_transforms = reg2['fwdtransforms'] + reg1['fwdtransforms']
+        
+        # 4. Generate Jacobian 
+        do_geometric = True if jac_type == 'absolute' else False
+        composed_jac = ants.create_jacobian_determinant_image(
+            fixed_mni, combined_transforms, do_log=True, geom=do_geometric
         )
         
-        # 2. Warp the Jacobian to MNI Space
-        # Use 'linear' interpolation for the statistical map to preserve values
-        warped_jac = ants.apply_transforms(
-            fixed=fixed_mni,
-            moving=ants.image_read(jacobian_path),
-            transformlist=reg['fwdtransforms'],
-            interpolator='linear'
-        )
+        # 5. Jurgen's Smoothing (FWHM = 2x smallest voxel. Assuming 1mm voxels -> sigma=0.85)
+        smoothed_jac = ants.smooth_image(composed_jac, sigma=0.85)
         
-        ants.image_write(warped_jac, output_path)
+        ants.image_write(smoothed_jac, output_path)
         return output_path
     
     # Insert into LDBMEngine class in utilities/ldbm.py

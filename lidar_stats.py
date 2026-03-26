@@ -62,7 +62,8 @@ def main():
             print(f"  [STAT] Mean centering '{var}': Subtracted {mean_val:.4f}")
 
     # 2. File Matching
-    search_pattern = os.path.join(args.bids_dir, "derivatives", "dbm", "sub-*", "ses-*", "anat", "*_space-MNI_desc-logJacobian_stat.nii.gz")
+    # Updated to catch 'space-Template' and any jacobian type
+    search_pattern = os.path.join(args.bids_dir, "derivatives", "dbm", "sub-*", "ses-*", "anat", "*_space-Template_desc-*Jacobian_stat.nii.gz")
     jac_files = sorted(glob.glob(search_pattern))
     df['sub_match'] = df['subject_id'].apply(lambda x: f"sub-{x}" if "sub-" not in str(x) else str(x))
     df['ses_match'] = df['session'].apply(lambda x: f"ses-{x}" if "ses-" not in str(x) else str(x))

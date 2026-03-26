@@ -91,11 +91,10 @@ class BIDSManager:
             results = list(executor.map(lambda s: self.process_level2_subject(s, template_path, jac_type), subjects))
         for r in results: print(r)
 
-    def run_all_levels(self, mni_path, subject_id=None):
-        """Full pipeline: Level 1 then Level 2."""
-        self.run_level1(subject_id=subject_id)
-        self.run_level2(mni_path, subject_id=subject_id)
-        # Add to BIDSManager in utilities/data.py
+    def run_all_levels(self, mni_path, subject_id=None, jac_type='relative'):
+            """Full pipeline: Level 1 then Level 2."""
+            self.run_level1(subject_id=subject_id, jac_type=jac_type)
+            self.run_level2_composed(mni_path, subject_id=subject_id, jac_type=jac_type)
 
     def build_population_template(self, output_path, iterations=3):
         """

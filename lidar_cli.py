@@ -1,5 +1,6 @@
 import argparse
 from utilities.data import BIDSManager
+import os
 
 def main():
     parser = argparse.ArgumentParser(description="LIDAR: Longitudinal Imaging Deformation Analysis Repository")
@@ -38,7 +39,7 @@ def main():
     elif args.task == "level2":
         if not args.mni_template: raise ValueError("Level 2 requires --mni_template (MNI or study_atlas.nii.gz)")
         # Now uses the Composed Warp approach
-        manager.run_level2_composed(args.mni_template, subject_id=args.subject)
+        manager.run_level2_composed(args.mni_template, subject_id=args.subject, jac_type=args.jac_type)
 
     elif args.task == "all":
         if not args.mni_template: raise ValueError("Full pipeline requires --mni_template")
