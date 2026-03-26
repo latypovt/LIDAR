@@ -94,16 +94,51 @@ class LDBMEngine:
         ants.image_write(warped_jac, output_path)
         return output_path
     
-    def generate_log_jacobian(self, moving_path, sst_path, output_path):
-        """Calculates Log-Jacobian from Session to SST."""
+    # Insert into LDBMEngine class in utilities/ldbm.py
+
+    def generate_log_jacobian(self, moving_path, sst_path, output_path, jac_type='relative'):
+        """
+        Calculates Log-Jacobian from Session to SST.
+        jac_type='relative': Pure nonlinear (local shape)
+        jac_type='absolute': Nonlinear + Affine (total volume)
+        """
         fixed = ants.image_read(sst_path)
-        moving = self.preprocess(moving_path) # Ensure moving is prepped same as SST
+        moving = self.preprocess(moving_path)
         
+        # SyN registration includes both Affine and Deformable steps
         reg = ants.registration(fixed=fixed, moving=moving, type_of_transform='SyN')
         
-        # Extract Jacobian from the forward warp field
+        # Jurgen's Logic: Absolute includes the affine scaling; Relative removes it.
+        do_geometric = True if jac_type == 'absolute' else False
+        
         jacobian = ants.create_jacobian_determinant_image(
-            fixed, reg['fwdtransforms'][0], do_log=True
+            fixed, reg['fwdtransforms'][0], do_log=True, geom=do_geometric
         )
         ants.image_write(jacobian, output_path)
         return output_path
+
+    def warp_composed_jacobian(self, moving_path, sst_path, mni_path, output_path):
+        """
+        Composes Session->SST and SST->MNI transforms into one field 
+        to calculate a 'clean' Jacobian in MNI space.
+        """
+        fixed_mni = ants.image_read(mni_path)
+        sst = ants.image_read(sst_path)
+        moving = self.preprocess(moving_path)
+
+        # 1. Get Session -> SST transforms
+        reg1 = ants.registration(fixed=sst, moving=moving, type_of_transform='SyN')
+        
+        # 2. Get SST -> MNI transforms
+        reg2 = ants.registration(fixed=fixed_mni, moving=sst, type_of_transform='SyN')
+        
+        # 3. COMPOSITE: Combine the forward warps [reg2_warp, reg2_affine, reg1_warp, reg1_affine]
+        combined_transforms = reg2['fwdtransforms'] + reg1['fwdtransforms']
+        
+        # 4. Generate Jacobian from the composed field directly in MNI space
+        # This avoids 'interpolating the Jacobian image' which causes noise
+        composed_jac = ants.create_jacobian_determinant_image(
+            fixed_mni, combined_transforms, do_log=True
+        )
+        
+        ants.image_write(composed_jac, output_path)

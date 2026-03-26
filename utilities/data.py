@@ -2,6 +2,8 @@ import os
 from bids import BIDSLayout
 from concurrent.futures import ThreadPoolExecutor
 from utilities.ldbm import LDBMEngine
+import glob
+import ants
 
 class BIDSManager:
     def __init__(self, bids_root, n_parallel_subjects=2, itk_threads=4):
@@ -90,3 +92,22 @@ class BIDSManager:
         """Full pipeline: Level 1 then Level 2."""
         self.run_level1(subject_id=subject_id)
         self.run_level2(mni_path, subject_id=subject_id)
+        # Add to BIDSManager in utilities/data.py
+
+    def build_population_template(self, output_path, iterations=3):
+        """
+        Level 2: Constructs a Study-Specific Population Template from all SSTs.
+        This creates the 'Final Common Space' described in Jurgen's pipeline.
+        """
+        all_ssts = glob.glob(os.path.join(self.deriv_root, "sub-*", "sst", "*_desc-SST_T1w.nii.gz"))
+        print(f"--- Building Level 2 Population Template from {len(all_ssts)} SSTs ---")
+        
+        pop_template = ants.build_template(
+            image_list=all_ssts,
+            iterations=iterations,
+            type_of_transform='SyN',
+            syn_metric='cc' # Cross-correlation for robust group-wise alignment
+        )
+        
+        ants.image_write(pop_template, output_path)
+        return output_path
