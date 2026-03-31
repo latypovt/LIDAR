@@ -1,0 +1,14 @@
+Metadata-Version: 2.0
+Name: bids
+Version: 0.0
+Summary: bids: a template for small scientific Python projects
+Home-page: https://pypi.python.org/pypi/pybids/
+Author: Yaroslav Halchenko
+Author-email: debian@onerussian.com
+License: UNKNOWN
+Platform: all
+Requires-Dist: pybids
+
+Use `pybids <https://pypi.python.org/pypi/pybids/>`_ instead.
+
+

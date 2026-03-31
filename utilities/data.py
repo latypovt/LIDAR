@@ -99,16 +99,22 @@ class BIDSManager:
     def build_population_template(self, output_path, iterations=3):
         """
         Level 2: Constructs a Study-Specific Population Template from all SSTs.
-        This creates the 'Final Common Space' described in Jurgen's pipeline.
         """
-        all_ssts = glob.glob(os.path.join(self.deriv_root, "sub-*", "sst", "*_desc-SST_T1w.nii.gz"))
-        print(f"--- Building Level 2 Population Template from {len(all_ssts)} SSTs ---")
+        # 1. Find the paths
+        all_sst_paths = glob.glob(os.path.join(self.deriv_root, "sub-*", "sst", "*_desc-SST_T1w.nii.gz"))
         
+        # 2. CRITICAL FIX: Load the strings into ANTSImage objects
+        print(f"--- Loading {len(all_sst_paths)} SSTs into memory ---")
+        all_sst_images = [ants.image_read(p) for p in all_sst_paths]
+        
+        print(f"--- Building Level 2 Population Template from 30 SSTs ---")
+        
+        # 3. Pass the Image list, not the Path list
         pop_template = ants.build_template(
-            image_list=all_ssts,
+            image_list=all_sst_images,
             iterations=iterations,
             type_of_transform='SyN',
-            syn_metric='cc' # Cross-correlation for robust group-wise alignment
+            syn_metric='cc' 
         )
         
         ants.image_write(pop_template, output_path)

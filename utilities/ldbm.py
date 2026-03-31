@@ -2,7 +2,7 @@ import os
 import ants
 import antspynet  # Deep learning for robust skull stripping
 from dipy.denoise.gibbs import gibbs_removal  # For Gibbs ringing correction
-
+import uuid
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -119,28 +119,51 @@ class LDBMEngine:
         ants.image_write(jacobian, output_path)
         return output_path
 
-    def warp_composed_jacobian(self, moving_path, sst_path, mni_path, output_path):
-        """
-        Composes Session->SST and SST->MNI transforms into one field 
-        to calculate a 'clean' Jacobian in MNI space.
-        """
+    def warp_composed_jacobian(self, moving_path, sst_path, mni_path, output_path, jac_type='absolute'):
+        import os
+        import uuid
+        
         fixed_mni = ants.image_read(mni_path)
         sst = ants.image_read(sst_path)
         moving = self.preprocess(moving_path)
 
-        # 1. Get Session -> SST transforms
+        # 1. Map Session to SST
         reg1 = ants.registration(fixed=sst, moving=moving, type_of_transform='SyN')
         
-        # 2. Get SST -> MNI transforms
+        # 2. Map SST to Population Template
         reg2 = ants.registration(fixed=fixed_mni, moving=sst, type_of_transform='SyN')
         
-        # 3. COMPOSITE: Combine the forward warps [reg2_warp, reg2_affine, reg1_warp, reg1_affine]
+        # 3. Combine Transform Lists
         combined_transforms = reg2['fwdtransforms'] + reg1['fwdtransforms']
         
-        # 4. Generate Jacobian from the composed field directly in MNI space
-        # This avoids 'interpolating the Jacobian image' which causes noise
-        composed_jac = ants.create_jacobian_determinant_image(
-            fixed_mni, combined_transforms, do_log=True
+        # 4. BULLETPROOF PATHING: Force absolute paths and guarantee directory exists
+        abs_output_dir = os.path.abspath(os.path.dirname(output_path))
+        os.makedirs(abs_output_dir, exist_ok=True)
+        
+        # Create a completely unique, absolute path for the C++ engine
+        tmp_composed = os.path.join(abs_output_dir, f"tmp_composed_{uuid.uuid4().hex}.nii.gz")
+        
+        # 5. Compose the fields into one Master Field
+        ants.apply_transforms(
+            fixed=fixed_mni, 
+            moving=moving, 
+            transformlist=combined_transforms, 
+            compose=tmp_composed
         )
         
-        ants.image_write(composed_jac, output_path)
+        # 6. Generate Jacobian from the Master Field
+        do_geometric = True if jac_type == 'absolute' else False
+        composed_jac = ants.create_jacobian_determinant_image(
+            fixed_mni, tmp_composed, do_log=True, geom=do_geometric
+        )
+        
+        # 7. Jurgen's Smoothing (FWHM ~2x voxel size)
+        smoothed_jac = ants.smooth_image(composed_jac, sigma=0.85)
+        
+        ants.image_write(smoothed_jac, output_path)
+        
+        # 8. Mandatory Cleanup
+        if os.path.exists(tmp_composed):
+            os.remove(tmp_composed)
+            
+        return output_path
