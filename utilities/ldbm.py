@@ -120,8 +120,6 @@ class LDBMEngine:
         return output_path
 
     def warp_composed_jacobian(self, moving_path, sst_path, mni_path, output_path, jac_type='absolute'):
-        import os
-        import uuid
         
         fixed_mni = ants.image_read(mni_path)
         sst = ants.image_read(sst_path)
@@ -136,34 +134,36 @@ class LDBMEngine:
         # 3. Combine Transform Lists
         combined_transforms = reg2['fwdtransforms'] + reg1['fwdtransforms']
         
-        # 4. BULLETPROOF PATHING: Force absolute paths and guarantee directory exists
+        # 4. Directory Prep
         abs_output_dir = os.path.abspath(os.path.dirname(output_path))
         os.makedirs(abs_output_dir, exist_ok=True)
         
-        # Create a completely unique, absolute path for the C++ engine
-        tmp_composed = os.path.join(abs_output_dir, f"tmp_composed_{uuid.uuid4().hex}.nii.gz")
+        # 5. THE FIX: Provide a pure prefix, NO EXTENSION.
+        prefix = os.path.join(abs_output_dir, f"tmp_composed_{uuid.uuid4().hex}")
         
-        # 5. Compose the fields into one Master Field
         ants.apply_transforms(
             fixed=fixed_mni, 
             moving=moving, 
             transformlist=combined_transforms, 
-            compose=tmp_composed
+            compose=prefix
         )
         
-        # 6. Generate Jacobian from the Master Field
+        # 6. Explicitly read the exact mutated filename ANTs generates
+        actual_composed_file = f"{prefix}comptx.nii.gz"
+        
+        # 7. Generate Jacobian 
         do_geometric = True if jac_type == 'absolute' else False
         composed_jac = ants.create_jacobian_determinant_image(
-            fixed_mni, tmp_composed, do_log=True, geom=do_geometric
+            fixed_mni, actual_composed_file, do_log=True, geom=do_geometric
         )
         
-        # 7. Jurgen's Smoothing (FWHM ~2x voxel size)
+        # 8. Jurgen's Smoothing (FWHM ~2x voxel size)
         smoothed_jac = ants.smooth_image(composed_jac, sigma=0.85)
         
         ants.image_write(smoothed_jac, output_path)
         
-        # 8. Mandatory Cleanup
-        if os.path.exists(tmp_composed):
-            os.remove(tmp_composed)
+        # 9. Clean up the mutated file
+        if os.path.exists(actual_composed_file):
+            os.remove(actual_composed_file)
             
         return output_path
