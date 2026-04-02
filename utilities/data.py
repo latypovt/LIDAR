@@ -97,24 +97,28 @@ class BIDSManager:
             self.run_level2_composed(mni_path, subject_id=subject_id, jac_type=jac_type)
 
     def build_population_template(self, output_path, iterations=3):
-        """
-        Level 2: Constructs a Study-Specific Population Template from all SSTs.
-        """
         # 1. Find the paths
         all_sst_paths = glob.glob(os.path.join(self.deriv_root, "sub-*", "sst", "*_desc-SST_T1w.nii.gz"))
         
-        # 2. CRITICAL FIX: Load the strings into ANTSImage objects
-        print(f"--- Loading {len(all_sst_paths)} SSTs into memory ---")
-        all_sst_images = [ants.image_read(p) for p in all_sst_paths]
-        
+        # 2. LOAD AND PAD THE SPATIAL GRID
+        print(f"--- Loading and Padding {len(all_sst_paths)} SSTs ---")
+        all_sst_images = []
+        for p in all_sst_paths:
+            img = ants.image_read(p)
+            # Pad by 30 voxels on all 6 sides (X, Y, Z) to expand the FOV
+            padded_img = ants.pad_image(img, pad_width=[(30, 30), (30, 30), (30, 30)], value=0.0)
+            all_sst_images.append(padded_img)
+            
         print(f"--- Building Level 2 Population Template from 30 SSTs ---")
         
-        # 3. Pass the Image list, not the Path list
+        # 3. Pass the padded images to the engine
         pop_template = ants.build_template(
             image_list=all_sst_images,
             iterations=iterations,
             type_of_transform='SyN',
-            syn_metric='cc' 
+            syn_metric='cc',
+            syn_niters=[50, 50, 10],
+            gradient_step=0.2 
         )
         
         ants.image_write(pop_template, output_path)

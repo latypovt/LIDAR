@@ -55,15 +55,15 @@ def main():
     active_vars = [v.strip() for v in formula_vars if v.strip() in df.columns]
 
     for var in active_vars:
-        # Check specifically for 'age' or age-related continuous variables
-        if 'age' in var.lower():
-            mean_val = df[var].mean()
-            df[var] = df[var] - mean_val
-            print(f"  [STAT] Mean centering '{var}': Subtracted {mean_val:.4f}")
+            # Mean center continuous biological covariates for model stability
+            if 'age' in var.lower() or 'icv' in var.lower():
+                mean_val = df[var].mean()
+                df[var] = df[var] - mean_val
+                print(f"  [STAT] Mean centering '{var}': Subtracted {mean_val:.4f}")
 
     # 2. File Matching
     # Updated to catch 'space-Template' and any jacobian type
-    search_pattern = os.path.join(args.bids_dir, "derivatives", "dbm", "sub-*", "ses-*", "anat", "*_space-Template_desc-*Jacobian_stat.nii.gz")
+    search_pattern = os.path.join(args.bids_dir, "derivatives", "dbm", "sub-*", "ses-*", "anat", "*_space-Template_desc-*Jacobian.nii.gz")
     jac_files = sorted(glob.glob(search_pattern))
     df['sub_match'] = df['subject_id'].apply(lambda x: f"sub-{x}" if "sub-" not in str(x) else str(x))
     df['ses_match'] = df['session'].apply(lambda x: f"ses-{x}" if "ses-" not in str(x) else str(x))
