@@ -27,6 +27,14 @@ Generates the SST and calculates the log-Jacobian maps in the subject's native t
 python lidar_cli.py /path/to/bids --task level1 --n_parallel 4 --itk_threads 4 
 ```
 
+### Intermediate: Population template generation
+Creates mean population template for level2 analysis (optional).
+
+```bash
+python lidar_cli.py /path/to/bids --task pop_template 
+```
+
+
 ### Level 2: MNI Normalization
 Warps the subject-level Jacobian maps into MNI space for group-level statistics.
 
