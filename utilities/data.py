@@ -116,10 +116,10 @@ class BIDSManager:
             image_list=all_sst_images,
             iterations=iterations,
             type_of_transform='SyN',
-            syn_metric='cc',
-            syn_niters=[50, 50, 10],
-            gradient_step=0.2 
+            syn_metric='cc'
         )
+        # syn_niters=[50, 50, 10],
+        # gradient_step=0.2 
         
         ants.image_write(pop_template, output_path)
         return output_path
